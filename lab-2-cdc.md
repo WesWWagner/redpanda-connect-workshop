@@ -215,7 +215,8 @@ Press `Ctrl+C` once you see the new rows for the INSERT and the UPDATE:
 ```
 
 The INSERT shows up as a brand-new row (a new `id` — the exact value depends on
-the table's sequence). The UPDATE shows the **same** `id: 1` reappearing with
+the table's sequence, so on a reused stack it can be well above 11). The UPDATE
+shows the **same** `id: 1` reappearing with
 `status` now `"shipped"`. Note there is no `op`/`before`/`after` envelope — each
 event is just the current row plus `_captured_at`; you tell inserts from updates
 by whether the `id` is new or a repeat.

@@ -177,10 +177,10 @@ rpk group delete fan-in-$STUDENT_ID --brokers $SITE_A_BROKER
 rpk group delete fan-in-$STUDENT_ID --brokers $SITE_B_BROKER
 ```
 
-> Stop the pipeline **before** deleting the group, so the group is idle. For a
-> few seconds after stopping it the group can report `NON_EMPTY_GROUP` while the
-> consumer session times out — just wait ~30s and retry. And if a `group delete`
-> says the group doesn't exist, it was already cleaned up — safe to ignore.
+> Stop the pipeline **before** deleting the group, so the group is idle. For up
+> to a minute after stopping it the group can report `NON_EMPTY_GROUP` while the
+> consumer session times out — just wait and retry. And if a `group delete` says
+> the group doesn't exist, it was already cleaned up — safe to ignore.
 
 ---
 
