@@ -211,8 +211,8 @@ credentials. The bundled trial license is mounted automatically, so Lab 2's CDC
 works too.
 
 This section is a complete, self-contained walkthrough — you don't need the cloud
-lab files, though `lab-1-fan-in.md` and `lab-2-cdc.md` carry the deeper
-explanations, diagrams, and "what you learned" if you want them.
+lab files, though [lab-1-fan-in.md](lab-1-fan-in.md) and [lab-2-cdc.md](lab-2-cdc.md)
+carry the deeper explanations, diagrams, and "what you learned" if you want them.
 
 **Every compose command in local mode needs `-f docker-compose.local.yaml`.**
 Bring it up (the first run builds the workbench image) and open a shell:
@@ -244,8 +244,8 @@ redpanda-connect run configs/fan-in.local.yaml
 ```
 
 ```bash
-for i in $(seq 1 5); do echo "{\"site\":\"a\",\"seq\":$i}"; done | rpk topic produce fab.events --brokers $SITE_A_BROKER
-for i in $(seq 1 5); do echo "{\"site\":\"b\",\"seq\":$i}"; done | rpk topic produce fab.events --brokers $SITE_B_BROKER
+for i in $(seq 1 5); do echo "{\"site\":\"a\",\"seq\":$i,\"ts\":$(date +%s)}"; done | rpk topic produce fab.events --brokers $SITE_A_BROKER
+for i in $(seq 1 5); do echo "{\"site\":\"b\",\"seq\":$i,\"ts\":$(date +%s)}"; done | rpk topic produce fab.events --brokers $SITE_B_BROKER
 
 rpk topic consume central.events --offset start --brokers $CENTRAL_BROKER   # Ctrl+C when done
 ```
@@ -281,9 +281,16 @@ Tear it all down (removes all local data, including the CDC slot):
 docker compose -f docker-compose.local.yaml down -v
 ```
 
-> Keeping the stack up to re-run instead? Drop the CDC slot first, or the next
-> Lab 2 run skips its snapshot:
+> Keeping the stack up to re-run instead? A few things persist between runs and
+> will make a re-run misbehave — reset them first:
 > ```bash
+> # drop the CDC slot (else Lab 2's snapshot is skipped) and its publication
 > psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable" \
->   -c "SELECT pg_drop_replication_slot('rpcn_cdc_local');"
+>   -c "SELECT pg_drop_replication_slot('rpcn_cdc_local'); DROP PUBLICATION IF EXISTS pglog_stream_rpcn_cdc_local;"
+> # remove leftover topics and the Lab 1 consumer group
+> rpk topic delete central.events cdc.orders --brokers $CENTRAL_BROKER
+> rpk topic delete fab.events --brokers $SITE_A_BROKER
+> rpk topic delete fab.events --brokers $SITE_B_BROKER
+> rpk group delete fan-in-local --brokers $SITE_A_BROKER
+> rpk group delete fan-in-local --brokers $SITE_B_BROKER
 > ```
