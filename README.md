@@ -78,6 +78,8 @@ Everything you need is in this folder:
 | `configs/fan-in.yaml` | Connect pipeline config for lab 1 |
 | `configs/cdc.yaml` | Connect pipeline config for lab 2 |
 | `redpanda.license` | Trial license, auto-mounted into the workbench (Lab 2 CDC) |
+| `docker-compose.local.yaml` | Optional all-in-one **local** stack (3 clusters + Postgres + workbench) — run with no cloud account |
+| `configs/fan-in.local.yaml`, `configs/cdc.local.yaml` | Plaintext lab configs for the local stack |
 
 ---
 
@@ -90,6 +92,10 @@ in the next step. No local `rpk`, no local `redpanda-connect`, no local `psql`.
 - Docker Desktop, or Docker Engine + the Compose plugin ([install guide](https://docs.docker.com/get-docker/))
 - Cluster credentials from instructor (broker URL, username, password)
 - Postgres credentials from instructor (Lab 2)
+
+> **No cloud account / no instructor?** You can run the entire workshop on your
+> own machine with zero credentials — skip ahead to
+> [Run it locally](#run-it-locally-no-cloud-account).
 
 Verify Docker is working before starting:
 ```bash
@@ -173,4 +179,70 @@ Leave the workbench shell with `exit`, then stop the container:
 
 ```bash
 docker compose down
+```
+
+---
+
+## Run it locally (no cloud account)
+
+No instructor clusters? `docker-compose.local.yaml` runs the whole workshop on
+your machine: three single-node Redpanda clusters (site-a, site-b, central), a
+Postgres for Lab 2, and the workbench — all on one Docker network, plaintext, no
+credentials. The bundled trial license is mounted automatically, so Lab 2's CDC
+works too.
+
+Bring it up (the first run builds the workbench image) and open a shell:
+
+```bash
+docker compose -f docker-compose.local.yaml up -d
+docker compose -f docker-compose.local.yaml exec workbench bash
+```
+
+The workbench already has the local connection details as environment variables:
+`$SITE_A_BROKER=redpanda-site-a:9092`, `$SITE_B_BROKER=redpanda-site-b:9092`,
+`$CENTRAL_BROKER=redpanda-central:9092`, and `$PG_HOST=postgres`.
+
+**Lab 1 (fan-in)** — the cloud commands minus `--tls-enabled`/`--sasl-*`, using
+the local config `configs/fan-in.local.yaml`:
+
+```bash
+rpk topic create fab.events --partitions 3 --brokers $SITE_A_BROKER
+rpk topic create fab.events --partitions 3 --brokers $SITE_B_BROKER
+rpk topic create central.events --partitions 6 --brokers $CENTRAL_BROKER
+
+# leave this running; open another workbench shell for the produce/consume steps
+redpanda-connect run configs/fan-in.local.yaml
+```
+
+```bash
+for i in $(seq 1 5); do echo "{\"site\":\"a\",\"seq\":$i}"; done | rpk topic produce fab.events --brokers $SITE_A_BROKER
+for i in $(seq 1 5); do echo "{\"site\":\"b\",\"seq\":$i}"; done | rpk topic produce fab.events --brokers $SITE_B_BROKER
+
+rpk topic consume central.events --offset start --brokers $CENTRAL_BROKER   # Ctrl+C when done
+```
+
+All ten messages land in `central.events`, each still carrying its `site` field.
+
+**Lab 2 (CDC)** — use `configs/cdc.local.yaml` (plaintext DSN + the bundled license):
+
+```bash
+rpk topic create cdc.orders --partitions 3 --brokers $CENTRAL_BROKER
+redpanda-connect run configs/cdc.local.yaml       # snapshot of orders, then live changes
+```
+
+In another shell, drive changes and watch them arrive (the config's DSN already
+points at `$PG_HOST`):
+
+```bash
+psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable" \
+  -c "INSERT INTO public.orders (item, qty, status) VALUES ('sensor', 100, 'pending');"
+rpk topic consume cdc.orders --offset start --brokers $CENTRAL_BROKER   # Ctrl+C when done
+```
+
+Each event is a flat row, e.g. `{"_captured_at":"…","id":1,"item":"widget","qty":5,"status":"pending"}`.
+
+Tear it all down (removes local data):
+
+```bash
+docker compose -f docker-compose.local.yaml down -v
 ```

@@ -37,14 +37,15 @@ sequenceDiagram
 
 > **Run everything in this lab inside the workbench shell** — open it with
 > `docker compose exec workbench bash` (see the [README setup](README.md#setup-do-this-first)).
-> Your `.env` values are already loaded there, so `$SITE_A_BROKER` and friends
-> just work. The `source .env` steps below are optional and harmless — keep or skip them.
+> Your credentials are already loaded there as environment variables, so
+> `$SITE_A_BROKER` and friends just work — no `source .env` needed.
+>
+> **No cloud account?** Run the whole lab against a local stack instead — see
+> [Run it locally](README.md#run-it-locally-no-cloud-account) in the README. The
+> steps are identical; you just use `configs/fan-in.local.yaml` and the local
+> broker names (`redpanda-site-a:9092`, etc.) with no `--tls-enabled`/`--sasl-*`.
 
 ## Part 1: Create topics
-
-```bash
-source .env
-```
 
 **Site A:**
 ```bash
@@ -84,7 +85,6 @@ Open two workbench shells (run `docker compose exec workbench bash` in two separ
 
 **Terminal 1 — Site A:**
 ```bash
-source .env
 for i in $(seq 1 5); do
   echo "{\"site\":\"a\",\"seq\":$i,\"ts\":$(date +%s)}"
 done | rpk topic produce fab.events \
@@ -93,16 +93,15 @@ done | rpk topic produce fab.events \
   --sasl-username $SITE_A_USER --sasl-password $SITE_A_PASSWORD
 ```
 
-**Expected output:**
+**Expected output** (partition/offset numbers will vary):
 ```
-Produced to partition 0 at offset 0 with timestamp ...
-Produced to partition 1 at offset 0 with timestamp ...
+Produced to partition 2 at offset 0 with timestamp ...
+Produced to partition 2 at offset 1 with timestamp ...
 ...
 ```
 
-**Terminal 2 — Site B** (open a second workbench shell: `docker compose exec workbench bash` — your `.env` is already loaded there):
+**Terminal 2 — Site B** (open a second workbench shell: `docker compose exec workbench bash`):
 ```bash
-source .env
 for i in $(seq 1 5); do
   echo "{\"site\":\"b\",\"seq\":$i,\"ts\":$(date +%s)}"
 done | rpk topic produce fab.events \
@@ -127,18 +126,16 @@ Validate it:
 redpanda-connect lint configs/fan-in.yaml
 ```
 
-**Expected output:**
-```
-configs/fan-in.yaml [0 errors]
-```
+A clean lint prints **nothing** and exits `0` — silence means success. (If you see
+`required environment variables were not set`, your `.env` isn't filled in, or
+you're running outside the workbench shell where those variables are loaded.)
 
 ---
 
 ## Part 4: Run the pipeline
 
 ```bash
-source .env
-redpanda-connect run --env-file .env configs/fan-in.yaml
+redpanda-connect run configs/fan-in.yaml
 ```
 
 **Expected output (first few seconds):**
@@ -149,16 +146,19 @@ level=info msg="Input type redpanda_migrator is now active" path=root.input.brok
 level=info msg="Input type redpanda_migrator is now active" path=root.input.broker.inputs.1
 ```
 
-Let it run. Messages from both sites are flowing to central.
+Let it run — messages from both sites are now flowing to central.
 
-> Leave this pipeline running. For the next step, open **another** workbench shell (`docker compose exec workbench bash` in a new terminal) — your `.env` is already loaded there.
+> The Migrator also logs lines like `Schema migration: schema registry sync
+> disabled` and `Topic migration: starting topic sync loop every 5m0s`. That's
+> expected and harmless — this lab replicates data only.
+
+> Leave this pipeline running. For the next step, open **another** workbench shell (`docker compose exec workbench bash` in a new terminal).
 
 ---
 
 ## Part 5: Verify at central
 
 ```bash
-source .env
 rpk topic consume central.events --offset start \
   --brokers $CENTRAL_BROKER --tls-enabled \
   --sasl-mechanism SCRAM-SHA-256 \
@@ -182,10 +182,9 @@ You should see messages from **both** site-a and site-b, replicated verbatim —
 
 ## Part 6: Produce more messages (live)
 
-With the pipeline still running, produce 5 more messages to site-a (in the terminal where you ran Part 2, or any terminal with `source .env`):
+With the pipeline still running, produce 5 more messages to site-a (in any workbench shell):
 
 ```bash
-source .env
 for i in $(seq 6 10); do
   echo "{\"site\":\"a\",\"seq\":$i,\"ts\":$(date +%s)}"
 done | rpk topic produce fab.events \
@@ -203,8 +202,6 @@ Then consume from central again. New messages appear within seconds.
 Stop the pipeline: `Ctrl+C`
 
 ```bash
-source .env
-
 rpk topic delete fab.events \
   --brokers $SITE_A_BROKER --tls-enabled \
   --sasl-mechanism SCRAM-SHA-256 \
@@ -230,6 +227,10 @@ rpk group delete fan-in-$STUDENT_ID \
   --sasl-mechanism SCRAM-SHA-256 \
   --sasl-username $SITE_B_USER --sasl-password $SITE_B_PASSWORD
 ```
+
+> Stop the pipeline **before** deleting the group, so the group is idle. If a
+> `group delete` says the group doesn't exist, it was already cleaned up — safe
+> to ignore.
 
 ---
 

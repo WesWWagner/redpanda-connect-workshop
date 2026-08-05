@@ -1,0 +1,23 @@
+# Lab 2 CDC for the LOCAL self-test stack (docker-compose.local.yaml).
+# Same as configs/cdc.yaml, but plaintext: Postgres with sslmode=disable and a
+# plaintext output to the in-network central cluster. Connection details come
+# from the environment the local workbench sets for you.
+input:
+  postgres_cdc:
+    dsn: "postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}?sslmode=disable"
+    schema: public
+    tables:
+      - orders
+    slot_name: "rpcn_cdc_${STUDENT_ID}"
+    stream_snapshot: true
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root._captured_at = now()
+
+output:
+  kafka_franz:
+    seed_brokers: ["${CENTRAL_BROKER}"]
+    topic: "cdc.orders"
