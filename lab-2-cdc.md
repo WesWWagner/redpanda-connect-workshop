@@ -156,7 +156,7 @@ Messages start flowing immediately — the snapshot rows arrive first, then live
 Open a new terminal (another workbench shell). Stream from the beginning — the first ~10 messages are the snapshot rows:
 
 ```bash
-rpk topic consume cdc.orders --offset start --brokers $CENTRAL_BROKER
+rpk topic consume cdc.orders --offset start -f '%v\n' --brokers $CENTRAL_BROKER
 ```
 
 > Streams continuously. Press `Ctrl+C` once you've seen ~10 snapshot rows.
@@ -204,7 +204,7 @@ psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable"
 The pipeline picks up changes in real time. Watch the consume you started in Part 5 — new messages appear within a second. If you stopped it, re-run:
 
 ```bash
-rpk topic consume cdc.orders --offset start --brokers $CENTRAL_BROKER
+rpk topic consume cdc.orders --offset start -f '%v\n' --brokers $CENTRAL_BROKER
 ```
 
 Press `Ctrl+C` once you see the new rows for the INSERT and the UPDATE:

@@ -128,10 +128,14 @@ Let it run — messages from both sites are now flowing to central.
 ## Part 5: Verify at central
 
 ```bash
-rpk topic consume central.events --offset start --brokers $CENTRAL_BROKER
+rpk topic consume central.events --offset start -f '%v\n' --brokers $CENTRAL_BROKER
 ```
 
 > This streams continuously. Press `Ctrl+C` once you've seen enough messages.
+> `-f '%v\n'` prints just the message value (what's shown below). Drop it to see
+> the full record — key, headers, partition/offset — where the
+> `redpanda-migrator-provenance` header and preserved timestamp show the Migrator
+> replicated everything, not just the payload.
 
 **Expected output:**
 ```json
