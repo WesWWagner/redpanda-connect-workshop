@@ -28,7 +28,7 @@ flowchart LR
     end
 
     RC2("⚡ Redpanda Connect\npostgres_cdc\nlogical replication")
-    CDC[("cdc.orders\n── op: r · c · u · d ──")]
+    CDC[("cdc.orders\n── snapshot + live rows ──")]
 
     TA -->|"Lab 1"| RC1
     TB -->|"Lab 1"| RC1

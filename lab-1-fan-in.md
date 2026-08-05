@@ -130,6 +130,9 @@ A clean lint prints **nothing** and exits `0` — silence means success. (If you
 `required environment variables were not set`, your `.env` isn't filled in, or
 you're running outside the workbench shell where those variables are loaded.)
 
+> **Running locally?** Lint `configs/fan-in.local.yaml` instead — the cloud
+> `fan-in.yaml` expects the TLS/SASL credential variables to be set.
+
 ---
 
 ## Part 4: Run the pipeline

@@ -27,11 +27,11 @@ flowchart LR
 
     subgraph RP["🏢  Redpanda  (Central)"]
         TOPIC[("cdc.orders")]
-        subgraph OPS["Event types"]
+        subgraph OPS["Events — flat rows + _captured_at"]
             direction LR
-            R["op: r\nsnapshot row"]
-            C["op: c\nINSERT"]
-            U["op: u\nUPDATE"]
+            R["snapshot\nexisting rows"]
+            C["INSERT\nnew row appears"]
+            U["UPDATE\nrow reappears,\nnew values"]
         end
         TOPIC --- OPS
     end
@@ -54,13 +54,16 @@ flowchart LR
 
 > **Run everything in this lab inside the workbench shell** — open it with
 > `docker compose exec workbench bash` (see the [README setup](README.md#setup-do-this-first)).
-> Your `.env` values are already loaded, so `$PG_HOST`, `$CENTRAL_BROKER`, and
-> the rest just work — no `source .env` needed.
+> Your credentials are already loaded as environment variables, so `$PG_HOST`,
+> `$CENTRAL_BROKER`, and the rest just work — no `source .env` needed.
+>
+> **No cloud account?** Run this lab against the local stack — see
+> [Run it locally](README.md#run-it-locally-no-cloud-account). The steps are the
+> same; you just use `configs/cdc.local.yaml` and drop `--tls-enabled`/`--sasl-*`.
 
 ## Part 1: Verify Postgres access
 
 ```bash
-source .env
 psql "postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}" \
   -c "SELECT count(*) FROM public.orders;"
 ```
@@ -95,7 +98,6 @@ psql "postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}" \
 ## Part 2: Create the output topic
 
 ```bash
-source .env
 rpk topic create cdc.orders --partitions 3 \
   --brokers $CENTRAL_BROKER --tls-enabled \
   --sasl-mechanism SCRAM-SHA-256 \
@@ -133,18 +135,16 @@ Validate:
 redpanda-connect lint configs/cdc.yaml
 ```
 
-**Expected output:**
-```
-configs/cdc.yaml [0 errors]
-```
+A clean lint prints **nothing** and exits `0` — silence means success. (If you
+see `required environment variables were not set`, your `.env` isn't filled in,
+or you're running outside the workbench shell where those variables are loaded.)
 
 ---
 
 ## Part 4: Run the pipeline
 
 ```bash
-source .env
-redpanda-connect run --env-file .env configs/cdc.yaml
+redpanda-connect run configs/cdc.yaml
 ```
 
 **Expected output (initial snapshot):**
@@ -155,14 +155,18 @@ level=info msg="Output type kafka_franz is now active" path=root.output
 ```
 Messages start flowing immediately — the snapshot rows arrive first, then live changes.
 
+> **The snapshot only happens the first time the slot is created.** If you re-run
+> after a previous run, the existing slot means the snapshot is skipped and you'll
+> only see *new* changes. To replay the snapshot, drop the slot first (see
+> [Cleanup](#cleanup)).
+
 ---
 
 ## Part 5: Consume the snapshot
 
-Open a new terminal. Stream from the beginning — the first ~10 messages are the snapshot rows:
+Open a new terminal (another workbench shell). Stream from the beginning — the first ~10 messages are the snapshot rows:
 
 ```bash
-source .env
 rpk topic consume cdc.orders --offset start \
   --brokers $CENTRAL_BROKER --tls-enabled \
   --sasl-mechanism SCRAM-SHA-256 \
@@ -173,12 +177,14 @@ rpk topic consume cdc.orders --offset start \
 
 **Expected output:**
 ```json
-{"op":"r","source":{"table":"orders"},"before":null,"after":{"id":1,"item":"widget","qty":5,"status":"pending"}}
-{"op":"r","source":{"table":"orders"},"after":{"id":2,"item":"gadget","qty":3,"status":"shipped"}}
+{"_captured_at":"2026-01-01T00:00:00Z","id":1,"item":"widget","qty":5,"status":"pending"}
+{"_captured_at":"2026-01-01T00:00:00Z","id":2,"item":"gadget","qty":3,"status":"shipped"}
 ...
 ```
 
-`"op":"r"` = read (snapshot). You'll see `"op":"c"` for inserts, `"op":"u"` for updates.
+Each event is the **full row** plus the `_captured_at` timestamp your pipeline
+added. The snapshot streams every existing row first (ids 1–10), then the
+pipeline switches to live changes.
 
 ---
 
@@ -187,7 +193,6 @@ rpk topic consume cdc.orders --offset start \
 Insert a new order:
 
 ```bash
-source .env
 psql "postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}" \
   -c "INSERT INTO public.orders (item, qty, status) VALUES ('sensor', 100, 'pending');"
 ```
@@ -207,19 +212,24 @@ psql "postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}" \
 The pipeline picks up changes in real time. Watch the consume you started in Part 5 — new messages appear within a second. If you stopped it, re-run:
 
 ```bash
-source .env
 rpk topic consume cdc.orders --offset start \
   --brokers $CENTRAL_BROKER --tls-enabled \
   --sasl-mechanism SCRAM-SHA-256 \
   --sasl-username $CENTRAL_USER --sasl-password $CENTRAL_PASSWORD
 ```
 
-Press `Ctrl+C` once you see the INSERT and UPDATE events:
+Press `Ctrl+C` once you see the new rows for the INSERT and the UPDATE:
 
 ```json
-{"op":"c","after":{"id":11,"item":"sensor","qty":100,"status":"pending"}}
-{"op":"u","before":{"id":1,"status":"pending"},"after":{"id":1,"status":"shipped"}}
+{"_captured_at":"2026-01-01T00:05:00Z","id":11,"item":"sensor","qty":100,"status":"pending"}
+{"_captured_at":"2026-01-01T00:05:01Z","id":1,"item":"widget","qty":5,"status":"shipped"}
 ```
+
+The INSERT shows up as a brand-new row (a new `id` — the exact value depends on
+the table's sequence). The UPDATE shows the **same** `id: 1` reappearing with
+`status` now `"shipped"`. Note there is no `op`/`before`/`after` envelope — each
+event is just the current row plus `_captured_at`; you tell inserts from updates
+by whether the `id` is new or a repeat.
 
 ---
 
@@ -227,10 +237,10 @@ Press `Ctrl+C` once you see the INSERT and UPDATE events:
 
 Stop the pipeline: `Ctrl+C`
 
-Drop the replication slot (important — slots hold Postgres WAL disk space):
+Drop the replication slot (important — slots hold Postgres WAL disk space, and a
+leftover slot makes the next run skip its snapshot):
 
 ```bash
-source .env
 psql "postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}" \
   -c "SELECT pg_drop_replication_slot('rpcn_cdc_${STUDENT_ID}');"
 ```
@@ -238,7 +248,6 @@ psql "postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}" \
 Delete the topic:
 
 ```bash
-source .env
 rpk topic delete cdc.orders \
   --brokers $CENTRAL_BROKER --tls-enabled \
   --sasl-mechanism SCRAM-SHA-256 \
@@ -250,7 +259,8 @@ rpk topic delete cdc.orders \
 ## What you learned
 - Redpanda Connect can stream Postgres WAL directly — no Kafka Connect, no JVM
 - Initial snapshot + live changes in a single pipeline
-- Replication slots guarantee no changes are missed across restarts
+- Each event is the full row enriched with `_captured_at` (no Debezium-style `op`/`before`/`after` envelope)
+- Replication slots guarantee no changes are missed across restarts — but a stale slot skips the snapshot, so drop it between fresh runs
 - Each student needs a unique slot name — shared slots cause conflicts
 
 ---
