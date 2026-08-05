@@ -1,38 +1,107 @@
-# Student workbench.
+# The entire workshop runs from this one file — no cloud account, no credentials.
 #
-# The ONLY thing you install on your machine is Docker. Every workshop tool
-# (rpk, redpanda-connect, psql) lives inside this one container.
+# Brings up three single-node Redpanda clusters (the two fab sites + central),
+# a Postgres for Lab 2, and the workbench (rpk + redpanda-connect + psql) — all
+# on one Docker network. The brokers advertise their service names, so the
+# workbench reaches them by name; nothing is published to host ports.
 #
-#   cp .env.example .env          # then fill in the values from your instructor
-#   docker compose build workbench   # one-time (a few minutes)
-#   docker compose up -d workbench
+#   docker compose up -d
 #   docker compose exec workbench bash
 #
-# You are now inside /workshop with all tools on the PATH and your .env values
-# already loaded as environment variables. Run every lab command from here.
+# Then follow the README. Tear down (removes all local data) with:
+#   docker compose down -v
+name: rp-workshop
+
+x-redpanda-healthcheck: &rp-health
+  healthcheck:
+    test: ["CMD-SHELL", "rpk cluster info || exit 1"]
+    interval: 5s
+    timeout: 5s
+    retries: 15
+
 services:
+  redpanda-site-a:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp=1
+      - --memory=512M
+      - --reserve-memory=0M
+      - --node-id=0
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda-site-a:9092
+    <<: *rp-health
+
+  redpanda-site-b:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp=1
+      - --memory=512M
+      - --reserve-memory=0M
+      - --node-id=0
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda-site-b:9092
+    <<: *rp-health
+
+  redpanda-central:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp=1
+      - --memory=512M
+      - --reserve-memory=0M
+      - --node-id=0
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda-central:9092
+    <<: *rp-health
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: workshop
+      POSTGRES_PASSWORD: workshop
+      POSTGRES_DB: workshop
+    command: ["postgres", "-c", "wal_level=logical"]
+    volumes:
+      - ./solution/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workshop -d workshop"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
   workbench:
     build:
       context: ./docker
     image: rp-workshop-workbench:latest
-    container_name: rp-workbench
-    # Your credentials are loaded into the container's environment, so
-    # $SITE_A_BROKER, $PG_HOST, etc. work in every shell you exec into.
-    env_file:
-      - .env
-    # The workshop folder is mounted live — edit configs on your host, run
-    # them in here. Nothing to rebuild when you change a YAML file.
-    #
-    # redpanda.license is also mounted at Connect's default license path, so
-    # Lab 2's postgres_cdc (a Redpanda Enterprise feature) works out of the box
-    # — no flags, no env vars. A short-lived trial license ships in this repo;
-    # replace redpanda.license with your own when it expires.
     volumes:
       - ./:/workshop
       - ./redpanda.license:/etc/redpanda/redpanda.license:ro
     working_dir: /workshop
-    # Keep the container alive so you can exec into it whenever you want.
+    # Local connection details, pre-wired to the containers above (plaintext,
+    # no credentials). These mirror the variable names used by the cloud .env.
+    environment:
+      STUDENT_ID: local
+      SITE_A_BROKER: redpanda-site-a:9092
+      SITE_B_BROKER: redpanda-site-b:9092
+      CENTRAL_BROKER: redpanda-central:9092
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_USER: workshop
+      PG_PASSWORD: workshop
+      PG_DB: workshop
     command: ["sleep", "infinity"]
-    # Give `docker compose exec workbench bash` a proper interactive terminal.
     stdin_open: true
     tty: true
+    depends_on:
+      redpanda-site-a: { condition: service_healthy }
+      redpanda-site-b: { condition: service_healthy }
+      redpanda-central: { condition: service_healthy }
+      postgres: { condition: service_healthy }

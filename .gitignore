@@ -1,5 +1,4 @@
-# Local credentials — students copy .env.example → .env and fill these in.
-.env
+# Instructor test-harness values (solution/) — copy from .env.local.example.
 solution/.env.local
 
 # NOTE: redpanda.license is intentionally committed (bundled trial license).

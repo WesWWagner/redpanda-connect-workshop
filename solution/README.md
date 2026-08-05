@@ -1,103 +1,90 @@
 # Instructor Guide
 
-This folder is not for students. It contains the local test environment and
-delivery notes.
-
-**Docker is the only prerequisite** — for you and for students. Every tool the
-labs use (`rpk`, `redpanda-connect`, `psql`) runs inside the *workbench*
-container defined by the repo-root `docker-compose.yaml`; the test scripts below
-build and drive it for you. Nothing is installed on the host.
+This folder is not for students — it's the automated test harness and delivery
+notes. Like the workshop itself, it's fully local and needs only Docker.
 
 ---
 
-## Before the Workshop
+## Delivering the workshop
 
-### 1. Pre-provision infrastructure
+There is **nothing to pre-provision** — no cloud clusters, no credentials. Each
+student runs the entire workshop on their own laptop from the repo root:
 
-Students need three Redpanda Cloud clusters and one Postgres instance. Fill in
-real values and distribute `.env` files (or share credentials over a secure
-channel):
+```bash
+docker compose up -d
+docker compose exec workbench bash
+```
 
-- **site-a** — simulates Fab Site A
-- **site-b** — simulates Fab Site B
-- **central** — Central IT hub
-- **postgres** — ERP/MES database (pre-loaded with `postgres-init.sql` seed data)
+`STUDENT_ID` is baked to `local` by the compose file. Because every student runs
+their own isolated stack, that shared name never collides between students.
 
-Each student needs a unique `STUDENT_ID` (e.g., their name) to namespace
-consumer groups and CDC replication slots so they don't conflict.
+---
 
-### 2. Verify the labs work locally
+## Verify the labs work
 
-The bundled Docker stack simulates the whole topology on your laptop:
+Two ways:
+
+**A) Walk the student flow** — `docker compose up -d` at the repo root, open the
+workbench, and run Lab 1 + Lab 2 exactly as written.
+
+**B) Automated checks** — this folder has a self-contained stack + scripts that
+build the workbench image and run every command (rpk, redpanda-connect, psql)
+inside it:
 
 ```bash
 cd solution/
-docker compose up -d
-# wait until all 4 containers report healthy:
-docker compose ps
-
+cp .env.local.example .env.local      # first time only
+docker compose up -d                  # wait until all 4 containers are healthy
 ./test-lab-1.sh
 ./test-lab-2.sh
-
 docker compose down -v
 ```
 
-Both scripts should exit `0`. On first run they build the workbench image
-(a few minutes) and then run every command — rpk, redpanda-connect, psql —
-*inside* that container, on the host network, against the local stack. You do
-not need any workshop tooling installed.
-
-### 3. License (already handled)
-
-`postgres_cdc` is a Redpanda Enterprise feature and needs a valid
-enterprise/trial license. A short-lived trial license ships at the repo root as
-`redpanda.license`:
-
-- The **student workbench** mounts it at Connect's default path
-  (`/etc/redpanda/redpanda.license`), so `redpanda-connect run` picks it up
-  automatically — Lab 2 CDC works with zero setup.
-- **`test-lab-2.sh`** finds it (repo-root `redpanda.license`, or
-  `solution/redpanda.license`, or `$REDPANDA_LICENSE`) and runs the *real*
-  `postgres_cdc` pipeline. With no license it falls back to the mock pipeline.
-
-When the trial expires, drop a fresh `redpanda.license` at the repo root.
+Both scripts should exit `0`.
 
 ---
 
-## Test Environment
+## License
 
-Local Docker (`solution/docker-compose.yaml`) simulates the 3-cluster + Postgres
-topology:
+`postgres_cdc` is a Redpanda Enterprise feature and needs a trial/enterprise
+license. A trial license ships at the repo root as `redpanda.license`:
 
-| Container | Port | Simulates |
-|-----------|------|-----------|
+- The **workbench** mounts it at `/etc/redpanda/redpanda.license`, so
+  `redpanda-connect run` uses it automatically — Lab 2 works with zero setup.
+- **`test-lab-2.sh`** finds it (`../redpanda.license`, `solution/redpanda.license`,
+  or `$REDPANDA_LICENSE`) and runs the real `postgres_cdc` pipeline; with no
+  license it falls back to the mock pipeline.
+
+Replace `redpanda.license` when the trial expires.
+
+---
+
+## Test environment
+
+`solution/docker-compose.yaml` runs a host-port stack the scripts drive over the
+host network:
+
+| Container | Port | Role |
+|-----------|------|------|
 | `redpanda-site-a` | 19092 | Fab Site A |
-| `redpanda-central` | 39092 | Central IT |
 | `redpanda-site-b` | 29092 | Fab Site B |
+| `redpanda-central` | 39092 | Central IT |
 | `postgres-workshop` | 5432 | ERP/MES DB |
 
-Configs in `solution/configs/` use plain `localhost:port` (no TLS/auth). The
-student-facing `configs/` at the repo root use env vars for cloud credentials.
+The student-facing `docker-compose.yaml` at the repo root is separate: it wires
+the same topology on one Docker network with service-name addressing and no host
+ports.
 
 ---
 
 ## Note: real CDC output shape
 
-Verified against `redpanda-connect` 4.102: the `postgres_cdc` input emits **flat
-row records** — e.g. `{"_captured_at":"…","id":1,"item":"widget","qty":5,
-"status":"pending"}` — for snapshot reads, inserts, and updates alike. It does
-**not** emit a Debezium-style `op` / `before` / `after` / `source` envelope.
-
-Two things in the delivered materials still show the older envelope shape and
-should be reconciled if you want byte-for-byte fidelity in the live demo:
-
-- `lab-2-cdc.md` "Expected output" blocks show `{"op":"r",…,"after":{…}}`.
-- `configs/cdc-mock.yaml` (the no-license fallback) simulates that `op`/`after`
-  shape.
-
-The teaching narrative (snapshot vs. insert vs. update) still holds — just note
-that with a real license students see flat rows keyed by the primary key, and
-distinguish operations by the row's presence/values rather than an `op` field.
+Verified against redpanda-connect 4.102: `postgres_cdc` emits **flat row records**
+— `{"_captured_at":…,"id":…,"item":…,"qty":…,"status":…}` — for snapshot reads,
+inserts, and updates alike; there is no Debezium `op`/`before`/`after` envelope.
+The student `lab-2-cdc.md` reflects this. The only place the older `op` shape
+remains is `solution/configs/cdc-mock.yaml`, the license-free fallback that
+`test-lab-2.sh` uses when no license is present.
 
 ---
 

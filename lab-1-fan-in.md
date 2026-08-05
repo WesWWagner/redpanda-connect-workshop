@@ -37,47 +37,21 @@ sequenceDiagram
 
 > **Run everything in this lab inside the workbench shell** — open it with
 > `docker compose exec workbench bash` (see the [README setup](README.md#setup-do-this-first)).
-> Your credentials are already loaded there as environment variables, so
-> `$SITE_A_BROKER` and friends just work — no `source .env` needed.
->
-> **No cloud account?** Run the whole lab against a local stack instead — see
-> [Run it locally](README.md#run-it-locally-no-cloud-account) in the README.
-> Open the workbench with `docker compose -f docker-compose.local.yaml exec
-> workbench bash` — the **`-f docker-compose.local.yaml` is required on every
-> compose command** in local mode. Then the steps below are identical, except
-> you use `configs/fan-in.local.yaml` and the local broker names
-> (`redpanda-site-a:9092`, etc.) with no `--tls-enabled`/`--sasl-*`.
+> The broker addresses are already loaded as environment variables there, so
+> `$SITE_A_BROKER`, `$SITE_B_BROKER`, and `$CENTRAL_BROKER` just work.
 
 ## Part 1: Create topics
 
-**Site A:**
 ```bash
-rpk topic create fab.events --partitions 3 \
-  --brokers $SITE_A_BROKER --tls-enabled \
-  --sasl-mechanism SCRAM-SHA-256 \
-  --sasl-username $SITE_A_USER --sasl-password $SITE_A_PASSWORD
+rpk topic create fab.events --partitions 3 --brokers $SITE_A_BROKER
+rpk topic create fab.events --partitions 3 --brokers $SITE_B_BROKER
+rpk topic create central.events --partitions 6 --brokers $CENTRAL_BROKER
 ```
 
-**Expected output:**
+**Expected output** (one block per command):
 ```
 TOPIC       STATUS
 fab.events  OK
-```
-
-**Site B** (same command, different broker):
-```bash
-rpk topic create fab.events --partitions 3 \
-  --brokers $SITE_B_BROKER --tls-enabled \
-  --sasl-mechanism SCRAM-SHA-256 \
-  --sasl-username $SITE_B_USER --sasl-password $SITE_B_PASSWORD
-```
-
-**Central:**
-```bash
-rpk topic create central.events --partitions 6 \
-  --brokers $CENTRAL_BROKER --tls-enabled \
-  --sasl-mechanism SCRAM-SHA-256 \
-  --sasl-username $CENTRAL_USER --sasl-password $CENTRAL_PASSWORD
 ```
 
 ---
@@ -90,10 +64,7 @@ Open two workbench shells (run `docker compose exec workbench bash` in two separ
 ```bash
 for i in $(seq 1 5); do
   echo "{\"site\":\"a\",\"seq\":$i,\"ts\":$(date +%s)}"
-done | rpk topic produce fab.events \
-  --brokers $SITE_A_BROKER --tls-enabled \
-  --sasl-mechanism SCRAM-SHA-256 \
-  --sasl-username $SITE_A_USER --sasl-password $SITE_A_PASSWORD
+done | rpk topic produce fab.events --brokers $SITE_A_BROKER
 ```
 
 **Expected output** (partition/offset numbers will vary):
@@ -103,19 +74,16 @@ Produced to partition 2 at offset 1 with timestamp ...
 ...
 ```
 
-**Terminal 2 — Site B** (open a second workbench shell: `docker compose exec workbench bash`):
+**Terminal 2 — Site B:**
 ```bash
 for i in $(seq 1 5); do
   echo "{\"site\":\"b\",\"seq\":$i,\"ts\":$(date +%s)}"
-done | rpk topic produce fab.events \
-  --brokers $SITE_B_BROKER --tls-enabled \
-  --sasl-mechanism SCRAM-SHA-256 \
-  --sasl-username $SITE_B_USER --sasl-password $SITE_B_PASSWORD
+done | rpk topic produce fab.events --brokers $SITE_B_BROKER
 ```
 
 ---
 
-## Part 3: Configure the pipeline
+## Part 3: Review the pipeline
 
 Open `configs/fan-in.yaml`. It's already written — review it before running.
 
@@ -129,12 +97,7 @@ Validate it:
 redpanda-connect lint configs/fan-in.yaml
 ```
 
-A clean lint prints **nothing** and exits `0` — silence means success. (If you see
-`required environment variables were not set`, your `.env` isn't filled in, or
-you're running outside the workbench shell where those variables are loaded.)
-
-> **Running locally?** Lint `configs/fan-in.local.yaml` instead — the cloud
-> `fan-in.yaml` expects the TLS/SASL credential variables to be set.
+A clean lint prints **nothing** and exits `0` — silence means success.
 
 ---
 
@@ -165,10 +128,7 @@ Let it run — messages from both sites are now flowing to central.
 ## Part 5: Verify at central
 
 ```bash
-rpk topic consume central.events --offset start \
-  --brokers $CENTRAL_BROKER --tls-enabled \
-  --sasl-mechanism SCRAM-SHA-256 \
-  --sasl-username $CENTRAL_USER --sasl-password $CENTRAL_PASSWORD
+rpk topic consume central.events --offset start --brokers $CENTRAL_BROKER
 ```
 
 > This streams continuously. Press `Ctrl+C` once you've seen enough messages.
@@ -193,10 +153,7 @@ With the pipeline still running, produce 5 more messages to site-a (in any workb
 ```bash
 for i in $(seq 6 10); do
   echo "{\"site\":\"a\",\"seq\":$i,\"ts\":$(date +%s)}"
-done | rpk topic produce fab.events \
-  --brokers $SITE_A_BROKER --tls-enabled \
-  --sasl-mechanism SCRAM-SHA-256 \
-  --sasl-username $SITE_A_USER --sasl-password $SITE_A_PASSWORD
+done | rpk topic produce fab.events --brokers $SITE_A_BROKER
 ```
 
 Then consume from central again. New messages appear within seconds.
@@ -208,30 +165,12 @@ Then consume from central again. New messages appear within seconds.
 Stop the pipeline: `Ctrl+C`
 
 ```bash
-rpk topic delete fab.events \
-  --brokers $SITE_A_BROKER --tls-enabled \
-  --sasl-mechanism SCRAM-SHA-256 \
-  --sasl-username $SITE_A_USER --sasl-password $SITE_A_PASSWORD
+rpk topic delete fab.events --brokers $SITE_A_BROKER
+rpk topic delete fab.events --brokers $SITE_B_BROKER
+rpk topic delete central.events --brokers $CENTRAL_BROKER
 
-rpk topic delete fab.events \
-  --brokers $SITE_B_BROKER --tls-enabled \
-  --sasl-mechanism SCRAM-SHA-256 \
-  --sasl-username $SITE_B_USER --sasl-password $SITE_B_PASSWORD
-
-rpk topic delete central.events \
-  --brokers $CENTRAL_BROKER --tls-enabled \
-  --sasl-mechanism SCRAM-SHA-256 \
-  --sasl-username $CENTRAL_USER --sasl-password $CENTRAL_PASSWORD
-
-rpk group delete fan-in-$STUDENT_ID \
-  --brokers $SITE_A_BROKER --tls-enabled \
-  --sasl-mechanism SCRAM-SHA-256 \
-  --sasl-username $SITE_A_USER --sasl-password $SITE_A_PASSWORD
-
-rpk group delete fan-in-$STUDENT_ID \
-  --brokers $SITE_B_BROKER --tls-enabled \
-  --sasl-mechanism SCRAM-SHA-256 \
-  --sasl-username $SITE_B_USER --sasl-password $SITE_B_PASSWORD
+rpk group delete fan-in-$STUDENT_ID --brokers $SITE_A_BROKER
+rpk group delete fan-in-$STUDENT_ID --brokers $SITE_B_BROKER
 ```
 
 > Stop the pipeline **before** deleting the group, so the group is idle. If a
@@ -244,7 +183,7 @@ rpk group delete fan-in-$STUDENT_ID \
 - A single Connect pipeline can consume from multiple Redpanda clusters simultaneously
 - The `redpanda_migrator` components replicate records faithfully — keys, headers, and timestamps preserved — with no custom mapping
 - A `broker` input fans several migrator sources into one output
-- Consumer groups are namespaced per student (`fan-in-$STUDENT_ID`) so runs don't interfere
+- Consumer groups are namespaced (`fan-in-$STUDENT_ID`) so parallel runs don't interfere
 - Messages from multiple sources land in one topic at central, each still carrying its `site` field
 
 → [Start Lab 2](lab-2-cdc.md)

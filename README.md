@@ -1,5 +1,5 @@
 # Redpanda Connect Workshop
-### Multi-Site Replication + CDC · 90 minutes
+### Multi-Site Replication + CDC · runs entirely on your laptop · ~90 minutes
 
 ---
 
@@ -47,9 +47,14 @@ flowchart LR
     class CDC out
 ```
 
-**Lab 1** — You run a single Redpanda Connect pipeline that reads `fab.events` from two remote clusters simultaneously and merges them into `central.events` using the **Redpanda Migrator**, which replicates each record faithfully (key, headers, and timestamp preserved).
+**Lab 1** — A single Redpanda Connect pipeline reads `fab.events` from the two fab clusters at once and merges them into `central.events` using the **Redpanda Migrator**, which replicates each record faithfully (key, headers, and timestamp preserved).
 
-**Lab 2** — You run a separate pipeline that streams changes from a Postgres `orders` table directly into Redpanda using logical replication (no Debezium, no Kafka Connect).
+**Lab 2** — A separate pipeline streams changes from a Postgres `orders` table directly into Redpanda using logical replication (no Debezium, no Kafka Connect).
+
+> **This workshop is fully local and Docker-only.** One `docker compose up` brings
+> up the whole thing — the two fab clusters, the central cluster, Postgres, and a
+> *workbench* container with all the tooling — on your machine. No cloud account,
+> no credentials, nothing to install but Docker.
 
 ---
 
@@ -57,60 +62,37 @@ flowchart LR
 
 | Time | Topic |
 |------|-------|
-| 0:00 – 0:10 | Setup: credentials, connectivity check |
+| 0:00 – 0:10 | Setup: bring up the stack, open the workbench |
 | 0:10 – 0:55 | **Lab 1** — Fan-in replication (site-a + site-b → central) |
 | 0:55 – 1:25 | **Lab 2** — Postgres CDC (orders → central) |
 | 1:25 – 1:30 | Comparison: Connect CDC vs Debezium vs DMS |
 
 ---
 
-## For Students
-
-Everything you need is in this folder:
+## What's in the repo
 
 | File | What it is |
 |------|-----------|
-| `.env.example` | Credential template — copy to `.env` and fill in |
-| `docker-compose.yaml` | Defines the **workbench** container that holds all the tools |
+| `docker-compose.yaml` | The whole environment: two fab clusters + central + Postgres + workbench |
 | `docker/Dockerfile` | Builds the workbench image (`rpk` + `redpanda-connect` + `psql`) |
-| `lab-1-fan-in.md` | Step-by-step lab 1 |
-| `lab-2-cdc.md` | Step-by-step lab 2 |
-| `configs/fan-in.yaml` | Connect pipeline config for lab 1 |
-| `configs/cdc.yaml` | Connect pipeline config for lab 2 |
-| `redpanda.license` | Trial license, auto-mounted into the workbench (Lab 2 CDC) |
-| `docker-compose.local.yaml` | Optional all-in-one **local** stack (3 clusters + Postgres + workbench) — run with no cloud account |
-| `configs/fan-in.local.yaml`, `configs/cdc.local.yaml` | Plaintext lab configs for the local stack |
-| `solution/` | Instructor-only — local test stack + automated lab checks. Students can ignore it. |
-
----
-
-## Choose your path
-
-- **Cloud (guided workshop)** — your instructor provides three Redpanda clusters,
-  a Postgres, and credentials. Do [Prerequisites](#prerequisites) →
-  [Setup (do this first)](#setup-do-this-first) → then the labs.
-- **Local (no account / self-study)** — run everything on your laptop with just
-  Docker and zero credentials. Go straight to
-  [Run it locally](#run-it-locally-no-cloud-account) — a complete, self-contained
-  walkthrough of both labs.
+| `lab-1-fan-in.md` | Step-by-step Lab 1 |
+| `lab-2-cdc.md` | Step-by-step Lab 2 |
+| `configs/fan-in.yaml` | Connect pipeline for Lab 1 |
+| `configs/cdc.yaml` | Connect pipeline for Lab 2 |
+| `redpanda.license` | Trial license, auto-mounted into the workbench (Lab 2's CDC needs it) |
+| `solution/` | Instructor-only — automated lab checks. Students can ignore it. |
 
 ---
 
 ## Prerequisites
 
 **The only thing you install is Docker.** Every tool the labs use — `rpk`,
-`redpanda-connect`, and `psql` — runs inside a *workbench* container you build
-in the next step. No local `rpk`, no local `redpanda-connect`, no local `psql`.
+`redpanda-connect`, and `psql` — runs inside the *workbench* container that
+`docker compose` builds for you.
 
 - Docker Desktop, or Docker Engine + the Compose plugin ([install guide](https://docs.docker.com/get-docker/))
-- Cluster credentials from instructor (broker URL, username, password)
-- Postgres credentials from instructor (Lab 2)
 
-> **No cloud account / no instructor?** You can run the entire workshop on your
-> own machine with zero credentials — skip ahead to
-> [Run it locally](#run-it-locally-no-cloud-account).
-
-Verify Docker is working before starting:
+Verify Docker is working:
 ```bash
 docker --version
 docker compose version
@@ -120,9 +102,6 @@ docker compose version
 
 ## Setup (do this first)
 
-> This is the **cloud path**, for instructor-provided clusters. No cloud account?
-> Skip to [Run it locally](#run-it-locally-no-cloud-account).
-
 Clone this repo and `cd` into it — **all commands assume you're at the repo root**:
 
 ```bash
@@ -130,31 +109,32 @@ git clone https://github.com/WesWWagner/redpanda-connect-workshop.git
 cd redpanda-connect-workshop
 ```
 
-Copy and fill in your credentials:
+Bring up the whole stack. The first run builds the workbench image (a few
+minutes); after that it's seconds:
 
 ```bash
-cp .env.example .env
-# edit .env with the values from your instructor
+docker compose up -d
 ```
 
-Build the workbench container (one-time, a few minutes) and start it:
-
-```bash
-docker compose build workbench
-docker compose up -d workbench
-```
-
-Open a shell inside the workbench. **Every command in both labs runs from inside this shell:**
+Open a shell inside the workbench. **Every lab command runs from inside this shell:**
 
 ```bash
 docker compose exec workbench bash
 ```
 
-You're now in `/workshop` with `rpk`, `redpanda-connect`, and `psql` on the
-PATH and your `.env` values already loaded as environment variables — so
-`$SITE_A_BROKER`, `$PG_HOST`, and the rest just work, with no `source .env`
-needed. Confirm the tools are present:
+You're now in `/workshop` with `rpk`, `redpanda-connect`, and `psql` on the PATH,
+and the connection details preloaded as environment variables — so the labs'
+`$SITE_A_BROKER`, `$CENTRAL_BROKER`, `$PG_HOST`, etc. just work:
 
+| Variable | Value |
+|----------|-------|
+| `$SITE_A_BROKER` | `redpanda-site-a:9092` |
+| `$SITE_B_BROKER` | `redpanda-site-b:9092` |
+| `$CENTRAL_BROKER` | `redpanda-central:9092` |
+| `$PG_HOST` (+ `$PG_PORT` `$PG_USER` `$PG_PASSWORD` `$PG_DB`) | `postgres` |
+| `$STUDENT_ID` | `local` — names your consumer group (`fan-in-local`) and CDC slot (`rpcn_cdc_local`) |
+
+Confirm the tools are present:
 ```bash
 rpk version
 redpanda-connect --version
@@ -162,138 +142,25 @@ psql --version
 ```
 
 > `rpk version` may print a `Redpanda Cluster Unreachable` line beneath the
-> version — harmless here (it's just probing a default local broker), not an error.
+> version — harmless here (it's just probing a default broker), not an error.
 
-> **Need a second terminal later?** (Lab 1 asks for a few.) Just run
-> `docker compose exec workbench bash` again in the new terminal — your `.env`
-> values are already loaded there too.
+> **Need a second terminal during a lab?** (Lab 1 asks for a couple.) Just run
+> `docker compose exec workbench bash` again in the new terminal — the same env
+> vars are already loaded there.
 
-Verify all three clusters are reachable (still inside the workbench shell):
-
-```bash
-rpk cluster info --brokers $SITE_A_BROKER --tls-enabled --sasl-mechanism SCRAM-SHA-256 --sasl-username $SITE_A_USER --sasl-password $SITE_A_PASSWORD
-rpk cluster info --brokers $SITE_B_BROKER --tls-enabled --sasl-mechanism SCRAM-SHA-256 --sasl-username $SITE_B_USER --sasl-password $SITE_B_PASSWORD
-rpk cluster info --brokers $CENTRAL_BROKER --tls-enabled --sasl-mechanism SCRAM-SHA-256 --sasl-username $CENTRAL_USER --sasl-password $CENTRAL_PASSWORD
-```
-
-**Expected output (each):**
-```
-CLUSTER
-=======
-redpanda.xxxxx
-
-BROKERS
-=======
-ID    HOST                         PORT
-0*    seed-xxxxx.xxx.fmc.prd.cloud  9092
-```
-
-If all three respond, you're ready. → [Start Lab 1](lab-1-fan-in.md)
+You're ready. → [Start Lab 1](lab-1-fan-in.md)
 
 ---
 
-## When you're done (cloud path)
+## When you're done
 
-Leave the workbench shell with `exit`, then stop the container:
-
-```bash
-docker compose down
-```
-
----
-
-## Run it locally (no cloud account)
-
-No instructor clusters? `docker-compose.local.yaml` runs the whole workshop on
-your machine: three single-node Redpanda clusters (site-a, site-b, central), a
-Postgres for Lab 2, and the workbench — all on one Docker network, plaintext, no
-credentials. The bundled trial license is mounted automatically, so Lab 2's CDC
-works too.
-
-This section is a complete, self-contained walkthrough — you don't need the cloud
-lab files, though [lab-1-fan-in.md](lab-1-fan-in.md) and [lab-2-cdc.md](lab-2-cdc.md)
-carry the deeper explanations, diagrams, and "what you learned" if you want them.
-
-**Every compose command in local mode needs `-f docker-compose.local.yaml`.**
-Bring it up (the first run builds the workbench image) and open a shell:
+Leave the workbench shell with `exit`, then tear everything down (this removes
+all local data — topics, Postgres, and the CDC slot):
 
 ```bash
-docker compose -f docker-compose.local.yaml up -d
-docker compose -f docker-compose.local.yaml exec workbench bash
+docker compose down -v
 ```
 
-The workbench already has the local connection details as environment variables:
-`$SITE_A_BROKER=redpanda-site-a:9092`, `$SITE_B_BROKER=redpanda-site-b:9092`,
-`$CENTRAL_BROKER=redpanda-central:9092`, and `$PG_HOST=postgres`. It also sets
-`$STUDENT_ID=local`, which names your consumer group (`fan-in-local`) and CDC
-replication slot (`rpcn_cdc_local`).
-
-**Lab 1 (fan-in)** — the cloud commands minus `--tls-enabled`/`--sasl-*`, using
-the local config `configs/fan-in.local.yaml`:
-
-```bash
-redpanda-connect lint configs/fan-in.local.yaml   # silent + exit 0 means valid
-
-rpk topic create fab.events --partitions 3 --brokers $SITE_A_BROKER
-rpk topic create fab.events --partitions 3 --brokers $SITE_B_BROKER
-rpk topic create central.events --partitions 6 --brokers $CENTRAL_BROKER
-
-# leave this running; open another shell with:
-#   docker compose -f docker-compose.local.yaml exec workbench bash
-redpanda-connect run configs/fan-in.local.yaml
-```
-
-```bash
-for i in $(seq 1 5); do echo "{\"site\":\"a\",\"seq\":$i,\"ts\":$(date +%s)}"; done | rpk topic produce fab.events --brokers $SITE_A_BROKER
-for i in $(seq 1 5); do echo "{\"site\":\"b\",\"seq\":$i,\"ts\":$(date +%s)}"; done | rpk topic produce fab.events --brokers $SITE_B_BROKER
-
-rpk topic consume central.events --offset start --brokers $CENTRAL_BROKER   # Ctrl+C when done
-```
-
-All ten messages land in `central.events`, each still carrying its `site` field.
-
-**Lab 2 (CDC)** — use `configs/cdc.local.yaml` (plaintext DSN + the bundled license):
-
-```bash
-rpk topic create cdc.orders --partitions 3 --brokers $CENTRAL_BROKER
-redpanda-connect run configs/cdc.local.yaml       # snapshot of orders, then live changes
-```
-
-In another shell, drive changes and watch them arrive (the config's DSN already
-points at `$PG_HOST`):
-
-```bash
-psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable" \
-  -c "INSERT INTO public.orders (item, qty, status) VALUES ('sensor', 100, 'pending');"
-psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable" \
-  -c "UPDATE public.orders SET status = 'shipped' WHERE id = 1;"
-rpk topic consume cdc.orders --offset start --brokers $CENTRAL_BROKER   # Ctrl+C when done
-```
-
-Each event is a flat row, e.g. `{"_captured_at":"…","id":1,"item":"widget","qty":5,"status":"pending"}`.
-The INSERT arrives as a brand-new `id`; the UPDATE shows `id: 1` reappearing with
-`status: "shipped"`. There's no `op` field — you tell inserts from updates by
-whether the `id` is new or a repeat.
-
-Tear it all down (removes all local data, including the CDC slot):
-
-```bash
-docker compose -f docker-compose.local.yaml down -v
-```
-
-> Keeping the stack up to re-run instead? A few things persist between runs and
-> will make a re-run misbehave — reset them first:
-> ```bash
-> # drop the CDC slot (else Lab 2's snapshot is skipped) and its publication
-> psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable" \
->   -c "SELECT pg_drop_replication_slot('rpcn_cdc_local'); DROP PUBLICATION IF EXISTS pglog_stream_rpcn_cdc_local;"
-> # remove leftover topics and the Lab 1 consumer group
-> rpk topic delete central.events cdc.orders --brokers $CENTRAL_BROKER
-> rpk topic delete fab.events --brokers $SITE_A_BROKER
-> rpk topic delete fab.events --brokers $SITE_B_BROKER
-> rpk group delete fan-in-local --brokers $SITE_A_BROKER
-> rpk group delete fan-in-local --brokers $SITE_B_BROKER
-> # revert Lab 2's row changes so the next snapshot is the clean 10 rows
-> psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable" \
->   -c "UPDATE public.orders SET status='pending' WHERE id=1; DELETE FROM public.orders WHERE item='sensor';"
-> ```
+> **Keeping the stack up to re-run a lab instead of `down -v`?** Re-run each
+> lab's **Cleanup** section first — in particular, drop the CDC replication slot,
+> or Lab 2's next run will skip its snapshot.

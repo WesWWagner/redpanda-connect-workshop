@@ -4,7 +4,7 @@
 **Level:** Intermediate
 
 ## What you'll do
-- Connect to a pre-provisioned Postgres database
+- Connect to the workshop's Postgres database
 - Stream changes from `public.orders` into `cdc.orders` on the central cluster
 - Insert and update rows to see CDC events in real time
 - Compare this approach against Debezium and AWS DMS
@@ -54,20 +54,13 @@ flowchart LR
 
 > **Run everything in this lab inside the workbench shell** — open it with
 > `docker compose exec workbench bash` (see the [README setup](README.md#setup-do-this-first)).
-> Your credentials are already loaded as environment variables, so `$PG_HOST`,
-> `$CENTRAL_BROKER`, and the rest just work — no `source .env` needed.
->
-> **No cloud account?** Run this lab against the local stack — see
-> [Run it locally](README.md#run-it-locally-no-cloud-account). Open the workbench
-> with `docker compose -f docker-compose.local.yaml exec workbench bash` (keep
-> **`-f docker-compose.local.yaml` on every compose command**). Then the steps
-> are the same, except you use `configs/cdc.local.yaml` and drop
-> `--tls-enabled`/`--sasl-*`.
+> The connection details are already loaded as environment variables there, so
+> `$PG_HOST`, `$CENTRAL_BROKER`, and the rest just work.
 
 ## Part 1: Verify Postgres access
 
 ```bash
-psql "postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}" \
+psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable" \
   -c "SELECT count(*) FROM public.orders;"
 ```
 
@@ -82,7 +75,7 @@ psql "postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}" \
 Check that logical replication is enabled:
 
 ```bash
-psql "postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}" \
+psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable" \
   -c "SHOW wal_level;"
 ```
 
@@ -94,17 +87,12 @@ psql "postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}" \
 (1 row)
 ```
 
-> If `wal_level` is not `logical`, tell the instructor — the database needs to be reconfigured.
-
 ---
 
 ## Part 2: Create the output topic
 
 ```bash
-rpk topic create cdc.orders --partitions 3 \
-  --brokers $CENTRAL_BROKER --tls-enabled \
-  --sasl-mechanism SCRAM-SHA-256 \
-  --sasl-username $CENTRAL_USER --sasl-password $CENTRAL_PASSWORD
+rpk topic create cdc.orders --partitions 3 --brokers $CENTRAL_BROKER
 ```
 
 **Expected output:**
@@ -121,26 +109,24 @@ Open `configs/cdc.yaml`. Key things to notice:
 
 - `postgres_cdc` input uses a **replication slot** — Postgres durably tracks what we've consumed
 - `stream_snapshot: true` means we'll get all existing rows first, then live changes
-- `slot_name` includes `$STUDENT_ID` so each student has an isolated slot
-- Output is `kafka_franz` to your central cluster
+- `slot_name` includes `$STUDENT_ID` so each run has an isolated slot
+- Output is `kafka_franz` to the central cluster
 
-> **`postgres_cdc` is a Redpanda Enterprise feature — and the license is
-> already wired up for you.** A short-lived trial license ships in this repo as
-> `redpanda.license`, and the workbench mounts it at Connect's default license
-> path, so `redpanda-connect run` picks it up automatically. Nothing to do.
+> **`postgres_cdc` is a Redpanda Enterprise feature — and the license is already
+> wired up for you.** A trial license ships in this repo as `redpanda.license`,
+> and the workbench mounts it at Connect's default license path, so
+> `redpanda-connect run` picks it up automatically. Nothing to do.
 >
 > If the trial has expired you'll see *"this feature requires a valid Redpanda
-> Enterprise Edition license"* — just drop a fresh `redpanda.license` into the
-> `workshop/` folder (or set `REDPANDA_LICENSE=<key>` in `.env`) and re-run.
+> Enterprise Edition license"* — drop a fresh `redpanda.license` into the repo
+> root and re-run.
 
 Validate:
 ```bash
 redpanda-connect lint configs/cdc.yaml
 ```
 
-A clean lint prints **nothing** and exits `0` — silence means success. (If you
-see `required environment variables were not set`, your `.env` isn't filled in,
-or you're running outside the workbench shell where those variables are loaded.)
+A clean lint prints **nothing** and exits `0` — silence means success.
 
 ---
 
@@ -170,10 +156,7 @@ Messages start flowing immediately — the snapshot rows arrive first, then live
 Open a new terminal (another workbench shell). Stream from the beginning — the first ~10 messages are the snapshot rows:
 
 ```bash
-rpk topic consume cdc.orders --offset start \
-  --brokers $CENTRAL_BROKER --tls-enabled \
-  --sasl-mechanism SCRAM-SHA-256 \
-  --sasl-username $CENTRAL_USER --sasl-password $CENTRAL_PASSWORD
+rpk topic consume cdc.orders --offset start --brokers $CENTRAL_BROKER
 ```
 
 > Streams continuously. Press `Ctrl+C` once you've seen ~10 snapshot rows.
@@ -201,7 +184,7 @@ pipeline switches to live changes.
 Insert a new order:
 
 ```bash
-psql "postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}" \
+psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable" \
   -c "INSERT INTO public.orders (item, qty, status) VALUES ('sensor', 100, 'pending');"
 ```
 
@@ -213,17 +196,14 @@ INSERT 0 1
 Now update an existing order:
 
 ```bash
-psql "postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}" \
+psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable" \
   -c "UPDATE public.orders SET status = 'shipped' WHERE id = 1;"
 ```
 
 The pipeline picks up changes in real time. Watch the consume you started in Part 5 — new messages appear within a second. If you stopped it, re-run:
 
 ```bash
-rpk topic consume cdc.orders --offset start \
-  --brokers $CENTRAL_BROKER --tls-enabled \
-  --sasl-mechanism SCRAM-SHA-256 \
-  --sasl-username $CENTRAL_USER --sasl-password $CENTRAL_PASSWORD
+rpk topic consume cdc.orders --offset start --brokers $CENTRAL_BROKER
 ```
 
 Press `Ctrl+C` once you see the new rows for the INSERT and the UPDATE:
@@ -249,18 +229,18 @@ Drop the replication slot (important — slots hold Postgres WAL disk space, and
 leftover slot makes the next run skip its snapshot):
 
 ```bash
-psql "postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}" \
-  -c "SELECT pg_drop_replication_slot('rpcn_cdc_${STUDENT_ID}');"
+psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable" \
+  -c "SELECT pg_drop_replication_slot('rpcn_cdc_$STUDENT_ID');"
 ```
 
 Delete the topic:
 
 ```bash
-rpk topic delete cdc.orders \
-  --brokers $CENTRAL_BROKER --tls-enabled \
-  --sasl-mechanism SCRAM-SHA-256 \
-  --sasl-username $CENTRAL_USER --sasl-password $CENTRAL_PASSWORD
+rpk topic delete cdc.orders --brokers $CENTRAL_BROKER
 ```
+
+> Tearing the whole stack down instead? `docker compose down -v` removes the
+> Postgres volume (slot and all) — no manual slot drop needed.
 
 ---
 
@@ -269,7 +249,7 @@ rpk topic delete cdc.orders \
 - Initial snapshot + live changes in a single pipeline
 - Each event is the full row enriched with `_captured_at` (no Debezium-style `op`/`before`/`after` envelope)
 - Replication slots guarantee no changes are missed across restarts — but a stale slot skips the snapshot, so drop it between fresh runs
-- Each student needs a unique slot name — shared slots cause conflicts
+- Each run uses a unique slot name (`rpcn_cdc_$STUDENT_ID`) — shared slots cause conflicts
 
 ---
 
