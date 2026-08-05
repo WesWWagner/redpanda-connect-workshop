@@ -293,4 +293,7 @@ docker compose -f docker-compose.local.yaml down -v
 > rpk topic delete fab.events --brokers $SITE_B_BROKER
 > rpk group delete fan-in-local --brokers $SITE_A_BROKER
 > rpk group delete fan-in-local --brokers $SITE_B_BROKER
+> # revert Lab 2's row changes so the next snapshot is the clean 10 rows
+> psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable" \
+>   -c "UPDATE public.orders SET status='pending' WHERE id=1; DELETE FROM public.orders WHERE item='sensor';"
 > ```

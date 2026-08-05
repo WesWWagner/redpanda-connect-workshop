@@ -186,8 +186,13 @@ rpk topic consume cdc.orders --offset start \
 ```
 
 Each event is the **full row** plus the `_captured_at` timestamp your pipeline
-added. The snapshot streams every existing row first (ids 1–10), then the
+added. The snapshot is emitted first (all existing rows, ids 1–10), then the
 pipeline switches to live changes.
+
+> `cdc.orders` has multiple partitions, so `rpk topic consume` can interleave
+> them rather than show the snapshot strictly first — a later change may print
+> *above* some snapshot rows. That's normal; the `_captured_at` timestamps
+> reflect the true order.
 
 ---
 
