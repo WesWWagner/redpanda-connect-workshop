@@ -1,0 +1,25 @@
+input:
+  postgres_cdc:
+    dsn: "postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}?sslmode=require"
+    schema: public
+    tables:
+      - orders
+    slot_name: "rpcn_cdc_${STUDENT_ID}"
+    stream_snapshot: true
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root._captured_at = now()
+
+output:
+  kafka_franz:
+    seed_brokers: ["${CENTRAL_BROKER}"]
+    topic: "cdc.orders"
+    tls:
+      enabled: true
+    sasl:
+      - mechanism: SCRAM-SHA-256
+        username: "${CENTRAL_USER}"
+        password: "${CENTRAL_PASSWORD}"

@@ -1,0 +1,8 @@
+# Local credentials — students copy .env.example → .env and fill these in.
+.env
+solution/.env.local
+
+# NOTE: redpanda.license is intentionally committed (bundled trial license).
+
+# macOS
+.DS_Store

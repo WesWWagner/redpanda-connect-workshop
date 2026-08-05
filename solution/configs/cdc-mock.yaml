@@ -1,0 +1,20 @@
+# Mock CDC pipeline for testing without an enterprise license.
+# Simulates the CDC event shape that postgres_cdc would produce.
+# Use cdc-local.yaml in workshop delivery (requires Redpanda enterprise license).
+input:
+  generate:
+    mapping: |
+      let i = counter()
+      root.op = if $i <= 10 { "r" } else if $i == 11 { "c" } else { "u" }
+      root.after.id = $i
+      root.after.item = ["widget","gadget","sensor"].index(($i - 1) % 3)
+      root.after.qty = $i * 5
+      root.after.status = "pending"
+      root._captured_at = now()
+    interval: 100ms
+    count: 12
+
+output:
+  kafka_franz:
+    seed_brokers: ["localhost:39092"]
+    topic: "cdc.orders"

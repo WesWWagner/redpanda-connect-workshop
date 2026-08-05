@@ -1,0 +1,31 @@
+input:
+  broker:
+    inputs:
+      - kafka_franz:
+          seed_brokers: ["localhost:19092"]
+          topics: ["fab.events"]
+          consumer_group: "fan-in-test"
+          start_from_oldest: true
+        processors:
+          - mutation: |
+              meta site_origin = "site-a"
+
+      - kafka_franz:
+          seed_brokers: ["localhost:29092"]
+          topics: ["fab.events"]
+          consumer_group: "fan-in-test"
+          start_from_oldest: true
+        processors:
+          - mutation: |
+              meta site_origin = "site-b"
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root._source = meta("site_origin")
+
+output:
+  kafka_franz:
+    seed_brokers: ["localhost:39092"]
+    topic: "central.events"

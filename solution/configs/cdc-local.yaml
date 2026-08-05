@@ -1,0 +1,19 @@
+input:
+  postgres_cdc:
+    dsn: "postgres://workshop:workshop@localhost:5432/workshop?sslmode=disable"
+    schema: public
+    tables:
+      - orders
+    slot_name: rpcn_cdc_test
+    stream_snapshot: true
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root._captured_at = now()
+
+output:
+  kafka_franz:
+    seed_brokers: ["localhost:39092"]
+    topic: "cdc.orders"

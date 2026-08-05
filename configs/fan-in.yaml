@@ -1,0 +1,49 @@
+input:
+  broker:
+    inputs:
+      - kafka_franz:
+          seed_brokers: ["${SITE_A_BROKER}"]
+          topics: ["fab.events"]
+          consumer_group: "fan-in-${STUDENT_ID}"
+          tls:
+            enabled: true
+          sasl:
+            - mechanism: SCRAM-SHA-256
+              username: "${SITE_A_USER}"
+              password: "${SITE_A_PASSWORD}"
+          start_from_oldest: true
+        processors:
+          - mutation: |
+              meta site_origin = "site-a"
+
+      - kafka_franz:
+          seed_brokers: ["${SITE_B_BROKER}"]
+          topics: ["fab.events"]
+          consumer_group: "fan-in-${STUDENT_ID}"
+          tls:
+            enabled: true
+          sasl:
+            - mechanism: SCRAM-SHA-256
+              username: "${SITE_B_USER}"
+              password: "${SITE_B_PASSWORD}"
+          start_from_oldest: true
+        processors:
+          - mutation: |
+              meta site_origin = "site-b"
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root._source = meta("site_origin")
+
+output:
+  kafka_franz:
+    seed_brokers: ["${CENTRAL_BROKER}"]
+    topic: "central.events"
+    tls:
+      enabled: true
+    sasl:
+      - mechanism: SCRAM-SHA-256
+        username: "${CENTRAL_USER}"
+        password: "${CENTRAL_PASSWORD}"
