@@ -58,8 +58,11 @@ flowchart LR
 > `$CENTRAL_BROKER`, and the rest just work — no `source .env` needed.
 >
 > **No cloud account?** Run this lab against the local stack — see
-> [Run it locally](README.md#run-it-locally-no-cloud-account). The steps are the
-> same; you just use `configs/cdc.local.yaml` and drop `--tls-enabled`/`--sasl-*`.
+> [Run it locally](README.md#run-it-locally-no-cloud-account). Open the workbench
+> with `docker compose -f docker-compose.local.yaml exec workbench bash` (keep
+> **`-f docker-compose.local.yaml` on every compose command**). Then the steps
+> are the same, except you use `configs/cdc.local.yaml` and drop
+> `--tls-enabled`/`--sasl-*`.
 
 ## Part 1: Verify Postgres access
 

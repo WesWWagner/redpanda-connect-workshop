@@ -80,6 +80,19 @@ Everything you need is in this folder:
 | `redpanda.license` | Trial license, auto-mounted into the workbench (Lab 2 CDC) |
 | `docker-compose.local.yaml` | Optional all-in-one **local** stack (3 clusters + Postgres + workbench) — run with no cloud account |
 | `configs/fan-in.local.yaml`, `configs/cdc.local.yaml` | Plaintext lab configs for the local stack |
+| `solution/` | Instructor-only — local test stack + automated lab checks. Students can ignore it. |
+
+---
+
+## Choose your path
+
+- **Cloud (guided workshop)** — your instructor provides three Redpanda clusters,
+  a Postgres, and credentials. Do [Prerequisites](#prerequisites) →
+  [Setup (do this first)](#setup-do-this-first) → then the labs.
+- **Local (no account / self-study)** — run everything on your laptop with just
+  Docker and zero credentials. Go straight to
+  [Run it locally](#run-it-locally-no-cloud-account) — a complete, self-contained
+  walkthrough of both labs.
 
 ---
 
@@ -106,6 +119,9 @@ docker compose version
 ---
 
 ## Setup (do this first)
+
+> This is the **cloud path**, for instructor-provided clusters. No cloud account?
+> Skip to [Run it locally](#run-it-locally-no-cloud-account).
 
 Clone this repo and `cd` into it — **all commands assume you're at the repo root**:
 
@@ -145,6 +161,9 @@ redpanda-connect --version
 psql --version
 ```
 
+> `rpk version` may print a `Redpanda Cluster Unreachable` line beneath the
+> version — harmless here (it's just probing a default local broker), not an error.
+
 > **Need a second terminal later?** (Lab 1 asks for a few.) Just run
 > `docker compose exec workbench bash` again in the new terminal — your `.env`
 > values are already loaded there too.
@@ -173,7 +192,7 @@ If all three respond, you're ready. → [Start Lab 1](lab-1-fan-in.md)
 
 ---
 
-## When you're done
+## When you're done (cloud path)
 
 Leave the workbench shell with `exit`, then stop the container:
 
@@ -191,6 +210,11 @@ Postgres for Lab 2, and the workbench — all on one Docker network, plaintext, 
 credentials. The bundled trial license is mounted automatically, so Lab 2's CDC
 works too.
 
+This section is a complete, self-contained walkthrough — you don't need the cloud
+lab files, though `lab-1-fan-in.md` and `lab-2-cdc.md` carry the deeper
+explanations, diagrams, and "what you learned" if you want them.
+
+**Every compose command in local mode needs `-f docker-compose.local.yaml`.**
 Bring it up (the first run builds the workbench image) and open a shell:
 
 ```bash
@@ -200,17 +224,22 @@ docker compose -f docker-compose.local.yaml exec workbench bash
 
 The workbench already has the local connection details as environment variables:
 `$SITE_A_BROKER=redpanda-site-a:9092`, `$SITE_B_BROKER=redpanda-site-b:9092`,
-`$CENTRAL_BROKER=redpanda-central:9092`, and `$PG_HOST=postgres`.
+`$CENTRAL_BROKER=redpanda-central:9092`, and `$PG_HOST=postgres`. It also sets
+`$STUDENT_ID=local`, which names your consumer group (`fan-in-local`) and CDC
+replication slot (`rpcn_cdc_local`).
 
 **Lab 1 (fan-in)** — the cloud commands minus `--tls-enabled`/`--sasl-*`, using
 the local config `configs/fan-in.local.yaml`:
 
 ```bash
+redpanda-connect lint configs/fan-in.local.yaml   # silent + exit 0 means valid
+
 rpk topic create fab.events --partitions 3 --brokers $SITE_A_BROKER
 rpk topic create fab.events --partitions 3 --brokers $SITE_B_BROKER
 rpk topic create central.events --partitions 6 --brokers $CENTRAL_BROKER
 
-# leave this running; open another workbench shell for the produce/consume steps
+# leave this running; open another shell with:
+#   docker compose -f docker-compose.local.yaml exec workbench bash
 redpanda-connect run configs/fan-in.local.yaml
 ```
 
@@ -236,13 +265,25 @@ points at `$PG_HOST`):
 ```bash
 psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable" \
   -c "INSERT INTO public.orders (item, qty, status) VALUES ('sensor', 100, 'pending');"
+psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable" \
+  -c "UPDATE public.orders SET status = 'shipped' WHERE id = 1;"
 rpk topic consume cdc.orders --offset start --brokers $CENTRAL_BROKER   # Ctrl+C when done
 ```
 
 Each event is a flat row, e.g. `{"_captured_at":"…","id":1,"item":"widget","qty":5,"status":"pending"}`.
+The INSERT arrives as a brand-new `id`; the UPDATE shows `id: 1` reappearing with
+`status: "shipped"`. There's no `op` field — you tell inserts from updates by
+whether the `id` is new or a repeat.
 
-Tear it all down (removes local data):
+Tear it all down (removes all local data, including the CDC slot):
 
 ```bash
 docker compose -f docker-compose.local.yaml down -v
 ```
+
+> Keeping the stack up to re-run instead? Drop the CDC slot first, or the next
+> Lab 2 run skips its snapshot:
+> ```bash
+> psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable" \
+>   -c "SELECT pg_drop_replication_slot('rpcn_cdc_local');"
+> ```

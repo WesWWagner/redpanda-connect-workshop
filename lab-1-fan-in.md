@@ -41,9 +41,12 @@ sequenceDiagram
 > `$SITE_A_BROKER` and friends just work — no `source .env` needed.
 >
 > **No cloud account?** Run the whole lab against a local stack instead — see
-> [Run it locally](README.md#run-it-locally-no-cloud-account) in the README. The
-> steps are identical; you just use `configs/fan-in.local.yaml` and the local
-> broker names (`redpanda-site-a:9092`, etc.) with no `--tls-enabled`/`--sasl-*`.
+> [Run it locally](README.md#run-it-locally-no-cloud-account) in the README.
+> Open the workbench with `docker compose -f docker-compose.local.yaml exec
+> workbench bash` — the **`-f docker-compose.local.yaml` is required on every
+> compose command** in local mode. Then the steps below are identical, except
+> you use `configs/fan-in.local.yaml` and the local broker names
+> (`redpanda-site-a:9092`, etc.) with no `--tls-enabled`/`--sasl-*`.
 
 ## Part 1: Create topics
 
