@@ -169,8 +169,9 @@ rpk topic consume cdc.orders --offset start --brokers $CENTRAL_BROKER
 ```
 
 Each event is the **full row** plus the `_captured_at` timestamp your pipeline
-added. The snapshot is emitted first (all existing rows, ids 1–10), then the
-pipeline switches to live changes.
+added (the values above are illustrative — yours will be current `now()`
+timestamps). The snapshot is emitted first (all existing rows, ids 1–10), then
+the pipeline switches to live changes.
 
 > `cdc.orders` has multiple partitions, so `rpk topic consume` can interleave
 > them rather than show the snapshot strictly first — a later change may print
@@ -225,12 +226,14 @@ by whether the `id` is new or a repeat.
 
 Stop the pipeline: `Ctrl+C`
 
-Drop the replication slot (important — slots hold Postgres WAL disk space, and a
-leftover slot makes the next run skip its snapshot):
+Drop the replication slot and the publication the connector created (important —
+slots hold Postgres WAL disk space, and a leftover slot makes the next run skip
+its snapshot):
 
 ```bash
 psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable" \
-  -c "SELECT pg_drop_replication_slot('rpcn_cdc_$STUDENT_ID');"
+  -c "SELECT pg_drop_replication_slot('rpcn_cdc_$STUDENT_ID');
+      DROP PUBLICATION IF EXISTS pglog_stream_rpcn_cdc_$STUDENT_ID;"
 ```
 
 Delete the topic:
