@@ -1,31 +1,23 @@
+# Local (plaintext) fan-in with the Redpanda Migrator — see ../../configs/fan-in.yaml
+# for the annotated student version.
 input:
   broker:
     inputs:
-      - kafka_franz:
+      - redpanda_migrator:
           seed_brokers: ["localhost:19092"]
           topics: ["fab.events"]
           consumer_group: "fan-in-test"
-          start_from_oldest: true
-        processors:
-          - mutation: |
-              meta site_origin = "site-a"
+          start_offset: earliest
 
-      - kafka_franz:
+      - redpanda_migrator:
           seed_brokers: ["localhost:29092"]
           topics: ["fab.events"]
           consumer_group: "fan-in-test"
-          start_from_oldest: true
-        processors:
-          - mutation: |
-              meta site_origin = "site-b"
-
-pipeline:
-  processors:
-    - mapping: |
-        root = this
-        root._source = meta("site_origin")
+          start_offset: earliest
 
 output:
-  kafka_franz:
+  redpanda_migrator:
     seed_brokers: ["localhost:39092"]
     topic: "central.events"
+    consumer_groups:
+      enabled: false

@@ -100,10 +100,13 @@ sleep 8
 msgs="$(docker logs wb-lab1-consume 2>&1)"
 docker rm -f wb-lab1-consume >/dev/null 2>&1
 
-echo "$msgs" | grep -q '"site":"a"'    && ok 'site-a messages in central'  || fail 'site-a messages missing'
-echo "$msgs" | grep -q '"site":"b"'    && ok 'site-b messages in central'  || fail 'site-b messages missing'
-echo "$msgs" | grep -q '_source.*site-a' && ok '_source tag: site-a'       || fail '_source tag missing for site-a'
-echo "$msgs" | grep -q '_source.*site-b' && ok '_source tag: site-b'       || fail '_source tag missing for site-b'
+echo "$msgs" | grep -q '"site":"a"' && ok 'site-a messages in central' || fail 'site-a messages missing'
+echo "$msgs" | grep -q '"site":"b"' && ok 'site-b messages in central' || fail 'site-b messages missing'
+# Migrator replicates verbatim: all 10 records land, and nothing is injected
+# (the old mutation added a _source field; the migrator must not).
+n=$(echo "$msgs" | grep -c '"seq"')
+[ "${n:-0}" -ge 10 ] && ok "all records replicated to central ($n)" || fail "expected >=10 records, got ${n:-0}"
+echo "$msgs" | grep -q '_source' && fail 'unexpected _source (migrator should replicate verbatim)' || ok 'records replicated verbatim (no _source injected)'
 
 # Stop pipeline
 docker rm -f wb-lab1-pipe >/dev/null 2>&1

@@ -1,45 +1,42 @@
+# Fan-in with the Redpanda Migrator.
+#
+# The redpanda_migrator input/output are Redpanda's purpose-built multi-cluster
+# replication components: they move records faithfully — key, headers, and
+# timestamp preserved — and stamp provenance headers, with no hand-written
+# mapping. A `broker` input runs one migrator per fab cluster and merges them;
+# the migrator output writes the combined stream to central.
 input:
   broker:
     inputs:
-      - kafka_franz:
+      - redpanda_migrator:
           seed_brokers: ["${SITE_A_BROKER}"]
           topics: ["fab.events"]
           consumer_group: "fan-in-${STUDENT_ID}"
+          start_offset: earliest
           tls:
             enabled: true
           sasl:
             - mechanism: SCRAM-SHA-256
               username: "${SITE_A_USER}"
               password: "${SITE_A_PASSWORD}"
-          start_from_oldest: true
-        processors:
-          - mutation: |
-              meta site_origin = "site-a"
 
-      - kafka_franz:
+      - redpanda_migrator:
           seed_brokers: ["${SITE_B_BROKER}"]
           topics: ["fab.events"]
           consumer_group: "fan-in-${STUDENT_ID}"
+          start_offset: earliest
           tls:
             enabled: true
           sasl:
             - mechanism: SCRAM-SHA-256
               username: "${SITE_B_USER}"
               password: "${SITE_B_PASSWORD}"
-          start_from_oldest: true
-        processors:
-          - mutation: |
-              meta site_origin = "site-b"
-
-pipeline:
-  processors:
-    - mapping: |
-        root = this
-        root._source = meta("site_origin")
 
 output:
-  kafka_franz:
+  redpanda_migrator:
     seed_brokers: ["${CENTRAL_BROKER}"]
+    # Override the migrator's default (which mirrors the source topic name) so
+    # both fab.events streams land in one central topic.
     topic: "central.events"
     tls:
       enabled: true
@@ -47,3 +44,6 @@ output:
       - mechanism: SCRAM-SHA-256
         username: "${CENTRAL_USER}"
         password: "${CENTRAL_PASSWORD}"
+    # This lab replicates data only — no consumer-group offset migration.
+    consumer_groups:
+      enabled: false

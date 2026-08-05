@@ -19,7 +19,7 @@ flowchart LR
         end
     end
 
-    RC1("⚡ Redpanda Connect\nbroker · 2 kafka_franz inputs\n_source tag injected per message")
+    RC1("⚡ Redpanda Connect\nbroker · 2 redpanda_migrator inputs\nfaithful multi-cluster replication")
 
     subgraph CENTRAL["🏢  Central IT"]
         direction TB
@@ -47,7 +47,7 @@ flowchart LR
     class CDC out
 ```
 
-**Lab 1** — You run a single Redpanda Connect pipeline that reads `fab.events` from two remote clusters simultaneously and merges them into `central.events`, tagging each message with its origin site.
+**Lab 1** — You run a single Redpanda Connect pipeline that reads `fab.events` from two remote clusters simultaneously and merges them into `central.events` using the **Redpanda Migrator**, which replicates each record faithfully (key, headers, and timestamp preserved).
 
 **Lab 2** — You run a separate pipeline that streams changes from a Postgres `orders` table directly into Redpanda using logical replication (no Debezium, no Kafka Connect).
 

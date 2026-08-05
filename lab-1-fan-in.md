@@ -23,14 +23,14 @@ sequenceDiagram
     A->>RC: {"site":"a","seq":2,...}
     B->>RC: {"site":"b","seq":2,...}
 
-    Note over RC: mutation processor<br/>meta site_origin = "site-a" | "site-b"<br/>mapping: root._source = meta("site_origin")
+    Note over RC: redpanda_migrator inputs + output<br/>records replicated faithfully<br/>(key, headers, timestamp preserved)
 
-    RC->>C: {"site":"a","seq":1,"_source":"site-a"}
-    RC->>C: {"site":"b","seq":1,"_source":"site-b"}
-    RC->>C: {"site":"a","seq":2,"_source":"site-a"}
-    RC->>C: {"site":"b","seq":2,"_source":"site-b"}
+    RC->>C: {"site":"a","seq":1,...}
+    RC->>C: {"site":"b","seq":1,...}
+    RC->>C: {"site":"a","seq":2,...}
+    RC->>C: {"site":"b","seq":2,...}
 
-    Note over C: central.events<br/>all fab events, origin tagged
+    Note over C: central.events<br/>all fab events merged (origin in the "site" field)
 ```
 
 ---
@@ -118,9 +118,9 @@ done | rpk topic produce fab.events \
 Open `configs/fan-in.yaml`. It's already written — review it before running.
 
 Key things to notice:
-- `broker` input combines two `kafka_franz` sources
-- A `mapping` processor tags each message with its origin site
-- Single `kafka_franz` output writes to central
+- `broker` input combines two `redpanda_migrator` sources — one per fab cluster
+- The Redpanda Migrator replicates each record faithfully (key, headers, timestamp) — no custom mapping needed
+- Single `redpanda_migrator` output writes the merged stream to central; each record keeps its own `site` field
 
 Validate it:
 ```bash
@@ -144,9 +144,9 @@ redpanda-connect run --env-file .env configs/fan-in.yaml
 **Expected output (first few seconds):**
 ```
 level=info msg="Launching a Redpanda Connect instance, use CTRL+C to close"
-level=info msg="Output type kafka_franz is now active" path=root.output
-level=info msg="Input type kafka_franz is now active" path=root.input.broker.inputs.0
-level=info msg="Input type kafka_franz is now active" path=root.input.broker.inputs.1
+level=info msg="Output type redpanda_migrator is now active" path=root.output
+level=info msg="Input type redpanda_migrator is now active" path=root.input.broker.inputs.0
+level=info msg="Input type redpanda_migrator is now active" path=root.input.broker.inputs.1
 ```
 
 Let it run. Messages from both sites are flowing to central.
@@ -169,13 +169,14 @@ rpk topic consume central.events --offset start \
 
 **Expected output:**
 ```json
-{"site":"a","seq":1,"ts":1720000001,"_source":"site-a"}
-{"site":"b","seq":1,"ts":1720000002,"_source":"site-b"}
-{"site":"a","seq":2,"ts":1720000003,"_source":"site-a"}
+{"site":"a","seq":1,"ts":1720000001}
+{"site":"b","seq":1,"ts":1720000002}
+{"site":"a","seq":2,"ts":1720000003}
 ...
 ```
 
-You should see messages from **both** site-a and site-b. Order may vary — that's expected.
+You should see messages from **both** site-a and site-b, replicated verbatim — the
+`site` field tells you which fab each came from. Order may vary — that's expected.
 
 ---
 
@@ -234,8 +235,9 @@ rpk group delete fan-in-$STUDENT_ID \
 
 ## What you learned
 - A single Connect pipeline can consume from multiple Redpanda clusters simultaneously
-- The `broker` input type handles fan-in; no custom code needed
+- The `redpanda_migrator` components replicate records faithfully — keys, headers, and timestamps preserved — with no custom mapping
+- A `broker` input fans several migrator sources into one output
 - Consumer groups are namespaced per student (`fan-in-$STUDENT_ID`) so runs don't interfere
-- Messages from multiple sources land in one ordered topic at central
+- Messages from multiple sources land in one topic at central, each still carrying its `site` field
 
 → [Start Lab 2](lab-2-cdc.md)
