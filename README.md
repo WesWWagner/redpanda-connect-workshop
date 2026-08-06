@@ -116,6 +116,10 @@ minutes); after that it's seconds:
 docker compose up -d
 ```
 
+Compose waits for the clusters' healthchecks, so when it returns you're ready.
+You can always confirm with `docker compose ps` — every service should show
+`(healthy)`.
+
 Open a shell inside the workbench. **Every lab command runs from inside this shell:**
 
 ```bash

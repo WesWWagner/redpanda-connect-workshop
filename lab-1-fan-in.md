@@ -107,7 +107,7 @@ A clean lint prints **nothing** and exits `0` — silence means success.
 redpanda-connect run configs/fan-in.yaml
 ```
 
-**Expected output (first few seconds):**
+**Expected output (first few seconds — line order may vary):**
 ```
 level=info msg="Launching a Redpanda Connect instance, use CTRL+C to close"
 level=info msg="Output type redpanda_migrator is now active" path=root.output

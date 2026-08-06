@@ -72,6 +72,9 @@ psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable"
 (1 row)
 ```
 
+> On a fresh stack this is exactly 10 (the seed data). If you've already run this
+> lab and kept the stack up, your own inserts count too — anything ≥ 10 is fine.
+
 Check that logical replication is enabled:
 
 ```bash
@@ -136,7 +139,7 @@ A clean lint prints **nothing** and exits `0` — silence means success.
 redpanda-connect run configs/cdc.yaml
 ```
 
-**Expected output (initial snapshot):**
+**Expected output (initial snapshot — line order may vary):**
 ```
 level=info msg="Launching a Redpanda Connect instance, use CTRL+C to close"
 level=info msg="Input type postgres_cdc is now active" path=root.input
@@ -243,8 +246,17 @@ Delete the topic:
 rpk topic delete cdc.orders --brokers $CENTRAL_BROKER
 ```
 
+Optional — if you're keeping the stack up and want the next run to match the
+docs exactly, reset the table data too:
+
+```bash
+psql "postgres://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable" \
+  -c "UPDATE public.orders SET status = 'pending' WHERE id = 1;
+      DELETE FROM public.orders WHERE item = 'sensor';"
+```
+
 > Tearing the whole stack down instead? `docker compose down -v` removes the
-> Postgres volume (slot and all) — no manual slot drop needed.
+> Postgres volume (slot, publication, and data) — no manual reset needed.
 
 ---
 
